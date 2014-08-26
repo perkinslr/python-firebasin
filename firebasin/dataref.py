@@ -6,6 +6,7 @@ import datetime
 from threading import Timer
 
 from connection import Connection
+from firebasin.datasnapshot import DataSnapshot
 from structure import Structure
 from debug import debug
 
@@ -213,19 +214,18 @@ class DataRef(object):
 
         characters = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
 
-        push_id = ""
+        push_id = []
 
         for step in range(0, 8):
-            push_id += characters[int(timestamp) % 64]
-            timestamp = math.floor(timestamp / 64)
+            push_id.append(characters[timestamp % 64])
+            timestamp //= 64
 
         push_id = push_id[::-1]
 
         for step in range(0, 12):
-            num = random.randint(0, 63)
-            push_id += characters[num]
+            push_id.append(random.choice(characters))
 
-        return push_id
+        return str.join('', push_id)
 
     def waitForInterrupt(self):
         ''' Ensure that KeyboardInterrupts are not ignored and that the Firebase exits. '''
@@ -367,6 +367,16 @@ class RootDataRef(DataRef):
         structure_path = self.structure.get(path, {})
         self.structure[path] = structure_path
         events = structure_path.get(event_key, [])
+        if structure_path.get('.last-data'):
+            if event == 'value':
+                obj = DataSnapshot(path, structure_path.get('.last-data'), self)
+                callback(obj)
+            elif event == 'child_added':
+                d = structure_path.get('.last-data')
+                if isinstance(d, dict):
+                    for c in d:
+                        obj = DataSnapshot(path+c, d[c], self)
+                        callback(obj)
         events.append(callback)
         self.structure[path][event_key] = events
 

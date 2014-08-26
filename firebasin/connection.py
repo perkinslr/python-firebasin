@@ -7,7 +7,7 @@ from debug import debug
 
 class Connection(threading.Thread):
     '''Connect to a Firebase websocket.'''
-
+    connections = []
     def __init__(self, url, root):
         threading.Thread.__init__(self)
 
@@ -19,7 +19,7 @@ class Connection(threading.Thread):
         self.data = None
         self.connected = False
         self.stopped = False
-
+        self.connections.append(self)
     def run(self):
         '''Perform a handshake then connect to a Firebase.'''
 
@@ -76,7 +76,10 @@ class Connection(threading.Thread):
         '''Send all queued outgoing messages to Firebase.'''
 
         for message in self.outgoing_queue:
-            self.data.send(json.dumps(message))
+            if self.data.stream:
+                self.data.send(json.dumps(message))
+            else:
+                self.goOnline()
 
     def send(self, message):
         '''Send or queue a single message to a Firebase.'''
@@ -90,6 +93,22 @@ class Connection(threading.Thread):
         '''Parse a URL.'''
 
         return url.split('https://')[1].split('.')
+
+    def goOffline(self):
+        self.connected = False
+        on_closed = self.data.on_closed
+        self.data.on_closed = lambda dta: None
+        self.data.close()
+        self.data.on_closed = on_closed
+
+    def goOnline(self):
+        data = DataClient('wss://' + self.url + '/.ws?v=5&ns=' + self.parsed_url[0])
+        data.on_opened = self.send_outgoing
+        data.on_received = self.data.on_received
+        data.on_closed = self.data.on_closed
+        data.on_connected = self.data.on_connected
+        data.connect()
+        self.data=data
 
 class DataClient(WebSocketClient):
     '''Connect to a web socket.'''
